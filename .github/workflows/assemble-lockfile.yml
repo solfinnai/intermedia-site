@@ -11,15 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Concatenate lockfile parts and commit
+      - name: Build package-lock.json
+        run: python3 .github/scripts/assemble-lockfile.py
+      - name: Commit package-lock.json and remove parts
         run: |
           set -euo pipefail
-          python3 .github/scripts/assemble-lockfile.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package-lock.json
-          git rm -r lock-b64
-          git rm .github/workflows/assemble-lockfile.yml .github/scripts/assemble-lockfile.py
+          git rm -rf lock-b64
+          git rm -f .github/workflows/assemble-lockfile.yml .github/scripts/assemble-lockfile.py
           git commit -m "Add package-lock.json"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && exit 0
