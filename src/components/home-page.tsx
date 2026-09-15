@@ -1,4 +1,4 @@
-use client;
+"use client";
 
 import { ArrowLink, Eyebrow, SectionIndex, TextLink } from "@/components/brand";
 import { CaseOpenButton } from "@/components/case-dialog";
