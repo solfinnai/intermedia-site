@@ -14,27 +14,12 @@ jobs:
       - name: Concatenate lockfile parts and commit
         run: |
           set -euo pipefail
+          python3 .github/scripts/assemble-lockfile.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python3 - <<'PY'
-          from pathlib import Path
-          fixes = {
-              'lock-b64/part-05': {930: ord('J'), 7162: ord('7')},
-              'lock-b64/part-12': {4358: ord('d'), 5633: ord('v')},
-          }
-          for path, offs in fixes.items():
-              p = Path(path)
-              b = bytearray(p.read_bytes())
-              for i, v in offs.items():
-                  b[i] = v
-              p.write_bytes(bytes(b))
-          PY
-          cat lock-b64/part-* | base64 -d | gzip -d > package-lock.json
-          test "$(wc -c < package-lock.json)" -eq 344363
-          test "$(sha256sum package-lock.json | awk '{print $1}')" = "69710e4bb8d9885bdb81b97e7ed09b837105adfec1063374c5ff224fef31f0ba"
           git add package-lock.json
           git rm -r lock-b64
-          git rm .github/workflows/assemble-lockfile.yml
+          git rm .github/workflows/assemble-lockfile.yml .github/scripts/assemble-lockfile.py
           git commit -m "Add package-lock.json"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main && git push && exit 0
