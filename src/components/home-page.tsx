@@ -1,4 +1,4 @@
-"use client";
+use client;
 
 import { ArrowLink, Eyebrow, SectionIndex, TextLink } from "@/components/brand";
 import { CaseOpenButton } from "@/components/case-dialog";
@@ -16,7 +16,7 @@ export function HomePage() {
   return (
     <>
       <BlendedHero />
-      <nav className="sticky top-[80px] z-40 flex min-h-14 items-center gap-8 overflow-auto border-b border-white/20 bg-[#0c243cf2] px-[var(--pad)] text-white backdrop-blur-md md:top-[96px]" aria-label="Homepage sections">
+      <nav className="sticky top-[80px] z-40 flex min-h-14 items-center gap-8 overflow-auto border-b border-white/20 bg-[#0c243c] px-[var(--pad)] text-white md:top-[96px]" aria-label="Homepage sections">
         <span className="hidden text-[12px] tracking-[0.14em] text-[#94adc8] md:inline">EXPLORE INTERMEDIA</span>
         <a href="#approach" className="shrink-0 py-4 text-sm text-[#adc0d6] hover:text-white">Our approach</a>
         <a href="#results" className="shrink-0 py-4 text-sm text-[#adc0d6] hover:text-white">Results</a>
