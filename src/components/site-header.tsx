@@ -37,7 +37,7 @@ export function SiteHeader() {
         isHome ? "fixed inset-x-0" : "sticky",
         transparent
           ? "border-b border-transparent bg-transparent text-white"
-          : "border-b border-[#d9dce3] bg-[#f4f6f8]/94 text-[#10141d] backdrop-blur-lg"
+          : "border-b border-[#d9dce3] bg-[#f4f6f8] text-[#10141d] shadow-[0_1px_0_#d9dce3]"
       )}
     >
       <Link href="/" className="shrink-0" aria-label="InterMedia home">
@@ -52,18 +52,23 @@ export function SiteHeader() {
       </Link>
 
       <nav className="ml-auto hidden items-center gap-7 lg:flex" aria-label="Main navigation">
-        <div className="relative">
+        <div
+          className="relative"
+          onMouseEnter={() => setPathOpen(true)}
+          onMouseLeave={() => setPathOpen(false)}
+        >
           <button
             type="button"
             className="flex items-center gap-1 text-sm font-semibold"
             aria-expanded={pathOpen}
+            aria-haspopup="true"
             onClick={() => setPathOpen((open) => !open)}
           >
             Find your path
             <ChevronDown className={cn("size-4 transition", pathOpen && "rotate-180")} />
           </button>
           {pathOpen ? (
-            <div className="absolute top-[calc(100%+18px)] left-1/2 z-50 grid w-[min(920px,calc(100vw-4rem))] -translate-x-[35%] gap-8 rounded-b-xl border border-[#d9dce3] bg-white p-10 text-[#10141d] shadow-2xl md:grid-cols-[0.9fr_1.2fr]">
+            <div className="absolute top-full left-1/2 z-50 grid w-[min(920px,calc(100vw-4rem))] -translate-x-[35%] gap-8 rounded-b-xl border border-[#d9dce3] bg-white p-10 pt-8 text-[#10141d] shadow-2xl md:grid-cols-[0.9fr_1.2fr]">
               <div>
                 <Eyebrow className="text-[#002d72]">Your next move</Eyebrow>
                 <h2 className="mt-5 font-heading text-3xl tracking-[-0.05em]">
