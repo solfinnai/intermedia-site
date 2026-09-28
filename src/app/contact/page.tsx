@@ -1,6 +1,8 @@
 import { Eyebrow, TextLink } from "@/components/brand";
 import { ContactForm } from "@/components/contact-form";
+import { HubSpotContactForm } from "@/components/hubspot-contact-form";
 import { site } from "@/lib/data";
+import { getHubSpotFormId } from "@/lib/hubspot";
 import Link from "next/link";
 import type { Metadata } from "next";
 
@@ -10,6 +12,8 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
+  const hubSpotFormId = getHubSpotFormId();
+
   return (
     <section className="px-[var(--pad)] pt-16 pb-24">
       <p className="mb-10 flex gap-3 text-xs text-[#636a77]">
@@ -32,7 +36,7 @@ export default function Page() {
             {site.email}
           </TextLink>
         </div>
-        <ContactForm />
+        {hubSpotFormId ? <HubSpotContactForm formId={hubSpotFormId} /> : <ContactForm />}
       </div>
     </section>
   );

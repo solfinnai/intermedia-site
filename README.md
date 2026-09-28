@@ -48,4 +48,6 @@ Gallery Concept #5 used initials for **Kris Johnson** and **Tim Wright**. Those 
 
 ## Copy and media
 
-Copy is taken from the live concept gallery and InterMedia’s public site. The opening reel uses the gallery’s studio preview. The contact form stays in preview mode (email draft only).
+Copy is taken from the live concept gallery and InterMedia’s public site. The opening reel uses the gallery’s studio preview.
+
+The contact page embeds InterMedia’s HubSpot form when `NEXT_PUBLIC_HUBSPOT_FORM_ID` is set to the real form GUID. Until that GUID is provided, the page stays in preview mode (email draft only). Setup, the remaining blockers, and the launch checklist are in [docs/hubspot-contact-form.md](docs/hubspot-contact-form.md).

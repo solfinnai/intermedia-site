@@ -134,3 +134,16 @@
     font-weight: 500;
   }
 }
+
+/* HubSpot injects the inquiry iframe into this node. Field chrome is styled in HubSpot. */
+.hs-form-frame {
+  width: 100%;
+  min-height: 12rem;
+}
+
+.hs-form-frame iframe {
+  width: 100% !important;
+  max-width: 100%;
+  border: 0;
+  color-scheme: light;
+}
