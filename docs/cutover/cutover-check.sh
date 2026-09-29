@@ -7,7 +7,7 @@
 #
 # Usage:
 #   docs/cutover/cutover-check.sh staging   # https://intermedia-site-upgrade.vercel.app
-#   docs/cutover/cutover-check.sh rehearsal # https://next.im.agency (dress rehearsal host)
+#   docs/cutover/cutover-check.sh rehearsal # https://new.im.agency (dress rehearsal host)
 #   docs/cutover/cutover-check.sh prod      # https://www.im.agency (after DNS)
 #   TARGET=https://some-preview.vercel.app docs/cutover/cutover-check.sh staging
 #
@@ -29,7 +29,7 @@ REPORT_DIR="${REPORT_DIR:-./cutover-reports}"
 
 case "$MODE" in
   staging)   TARGET="${TARGET:-https://intermedia-site-upgrade.vercel.app}" ;;
-  rehearsal) TARGET="${TARGET:-https://next.im.agency}" ;;
+  rehearsal) TARGET="${TARGET:-https://new.im.agency}" ;;
   prod)      TARGET="${TARGET:-$CANONICAL_HOST}" ;;
   *) echo "Unknown mode '$MODE'. Use staging, rehearsal, or prod." >&2; exit 2 ;;
 esac
@@ -48,6 +48,8 @@ LEGACY_REDIRECTS="/about-us|/about
 /digital-marketing/|/converged-tv"
 
 RES=""
+# Optional: Vercel "Protection Bypass for Automation" secret, to gate a protected preview or staged deployment URL.
+if [ -n "${VERCEL_BYPASS:-}" ]; then RES="-H x-vercel-protection-bypass:$VERCEL_BYPASS"; fi
 if [ -n "${RESOLVE_IP:-}" ]; then
   for hp in www.im.agency:443 im.agency:443 www.im.agency:80 im.agency:80; do
     RES="$RES --resolve $hp:$RESOLVE_IP"
@@ -116,7 +118,7 @@ for p in $ALL_PAGES; do
     if [ "$MODE" = "prod" ]; then fail "$p sends X-Robots-Tag: $xrt on production"
     else pass "$p sends X-Robots-Tag noindex on non-production host (expected)"; fi
   elif [ "$MODE" != "prod" ]; then
-    warn "$p has no X-Robots-Tag noindex on a non-production host (duplicate-content risk)"
+    fail "$p has no X-Robots-Tag noindex on a non-production host (host rule not working on this edge)"
   fi
 
   want="$CANONICAL_HOST$p"; [ "$p" = "/" ] && want="$CANONICAL_HOST/"
@@ -131,6 +133,14 @@ for p in $ALL_PAGES; do
   elif [ "${SKIP_GA:-0}" = "1" ]; then warn "$p missing $GA_ID (SKIP_GA=1)"
   else fail "$p missing GA4 id $GA_ID"; fi
 done
+
+# 1b. Lead capture: when a HubSpot GUID is expected, /contact must render the HubSpot frame, not the email-draft fallback.
+if [ -n "${HUBSPOT_FORM_ID:-}" ]; then
+  want_id="$(printf '%s' "$HUBSPOT_FORM_ID" | tr 'A-F' 'a-f')"
+  r="$(fetch "$TARGET/contact")"
+  if grep -q "data-form-id=\"$want_id\"" "$TMP/b" && grep -q 'data-portal-id="47186401"' "$TMP/b"; then pass "/contact renders HubSpot form $want_id"
+  else fail "/contact does not render HubSpot form $want_id (email-draft fallback shipped?)"; fi
+fi
 
 # 2. Legacy redirects: permanent, single hop where possible, land on the right page.
 log "[2] Legacy redirects"
@@ -197,6 +207,7 @@ else
     esac
     r="$(fetch "$TARGET$lp")"; code="${r%%|*}"
     [ "$code" = "200" ] && pass "sitemap URL $lp 200" || fail "sitemap URL $lp returned $code"
+    if [ "$MODE" = "prod" ] && header x-robots-tag | grep -qi noindex; then fail "sitemap URL $lp sends X-Robots-Tag noindex on production"; fi
   done
 fi
 
@@ -207,7 +218,7 @@ r="$(fetch "$TARGET/this-path-should-not-exist-$STAMP")"; code="${r%%|*}"
 
 # 6. Security headers (warnings, not blockers, except HSTS on production).
 log "[6] Security headers"
-fetch "$TARGET/" >/dev/null
+r="$(fetch "$TARGET/")"; [ "${r%%|*}" = "200" ] || fail "security-header fetch of / returned ${r%%|*}"
 for h in x-content-type-options referrer-policy permissions-policy; do
   v="$(header $h)"; [ -n "$v" ] && pass "$h: $v" || warn "missing $h"
 done
@@ -239,22 +250,35 @@ if [ "$MODE" = "prod" ]; then
   if command -v openssl >/dev/null 2>&1; then
     for host in www.im.agency im.agency; do
       addr="${RESOLVE_IP:-$host}"
-      exp="$(echo | openssl s_client -servername "$host" -connect "$addr:443" 2>/dev/null | openssl x509 -noout -enddate -issuer 2>/dev/null | tr '\n' ' ')"
-      [ -n "$exp" ] && pass "TLS $host: $exp" || fail "TLS handshake failed for $host"
+      # curl verifies chain AND hostname on every platform; openssl only reports expiry (LibreSSL-safe flags).
+      if curl -sS $RES --max-time 15 -o /dev/null "https://$host/" 2>"$TMP/err"; then
+        pem="$(echo | openssl s_client -servername "$host" -connect "$addr:443" 2>/dev/null)"
+        exp="$(printf '%s\n' "$pem" | openssl x509 -noout -enddate -issuer 2>/dev/null | tr '\n' ' ')"
+        if printf '%s\n' "$pem" | openssl x509 -noout -checkend 1209600 >/dev/null 2>&1; then pass "TLS $host valid: $exp"
+        else fail "TLS $host expires within 14 days: $exp"; fi
+      else
+        fail "TLS $host invalid: $(head -n 1 "$TMP/err")"
+      fi
     done
   fi
 fi
 
-# 8. Alias domains (optional, production).
+# 8. Alias domains (optional, production). Must be a permanent, one-hop redirect that keeps path and query.
 if [ "${CHECK_ALIASES:-0}" = "1" ]; then
   log "[8] Alias domains (GET, not HEAD)"
-  for src in https://intermedia.agency/about-us https://www.intermedia.agency/ https://intermedia-advertising.com/ https://www.intermedia-advertising.com/; do
+  for src in "https://intermedia.agency/about-us?utm_source=check" "http://intermedia.agency/contact" "https://www.intermedia.agency/measurement" \
+             "https://intermedia-advertising.com/about-us?utm_source=check" "https://www.intermedia-advertising.com/contact" "http://intermedia-advertising.com/measurement"; do
     r="$(fetch "$src")"; code="${r%%|*}"; rest="${r#*|}"; loc="${rest%%|*}"
-    case "$loc" in
-      "$CANONICAL_HOST"*) [ "$code" = "301" ] || [ "$code" = "308" ] && pass "$src -> $loc ($code, one hop to canonical host)" || warn "$src -> $loc with $code" ;;
-      http://*) fail "$src redirects to insecure $loc" ;;
-      *) warn "$src answers $code -> ${loc:-no redirect} (not flattened to $CANONICAL_HOST yet)" ;;
+    want="$CANONICAL_HOST/${src#http*://*/}"
+    case "$code" in
+      301|308) ;;
+      *) fail "$src answers $code -> ${loc:-no redirect} (expected 301/308)"; continue ;;
     esac
+    case "$src" in http://*) # Vercel/Cloudflare may upgrade the scheme first; follow and require the final URL
+      f="$(follow "$src")"; frest="${f#*|}"; hops="${frest%%|*}"; eff="${frest#*|}"
+      [ "$eff" = "$want" ] && [ "$hops" -le 2 ] && pass "$src -> $eff ($hops hops)" || fail "$src ends at $eff in $hops hops (expected $want)"; continue ;;
+    esac
+    [ "$loc" = "$want" ] && pass "$src -> $loc ($code, one hop, path and query kept)" || fail "$src -> $loc (expected $want)"
   done
 fi
 

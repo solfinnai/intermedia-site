@@ -48,6 +48,13 @@ BASELINE = {
     '"google-site-verification=pCxX3aXsBvDFx9v4P_afxswU45yi67-ci8hg5sHBmpI"',
   },
   ("autodiscover.intermedia-advertising.com", "CNAME"): {"autodiscover.outlook.com."},
+  ("enterpriseregistration.intermedia-advertising.com", "CNAME"): {"enterpriseregistration.windows.net."},
+  ("enterpriseenrollment.intermedia-advertising.com", "CNAME"): {"enterpriseenrollment.manage.microsoft.com."},
+  ("lyncdiscover.intermedia-advertising.com", "CNAME"): {"webdir.online.lync.com."},
+  ("sip.intermedia-advertising.com", "CNAME"): {"sipdir.online.lync.com."},
+  ("_sipfederationtls._tcp.intermedia-advertising.com", "SRV"): {"100 1 5061 sipfed.online.lync.com."},
+  ("_sip._tls.intermedia-advertising.com", "SRV"): {"100 1 443 sipdir.online.lync.com."},
+  ("msoid.intermedia.agency", "CNAME"): {"clientconfig.microsoftonline-p.net."},
 }
 # TXT sets at an apex may legitimately GROW (e.g. a new google-site-verification TXT).
 ALLOW_ADDITIONS = {("im.agency", "TXT"), ("intermedia.agency", "TXT"), ("intermedia-advertising.com", "TXT")}
@@ -78,18 +85,37 @@ def ask(r, name, rtype):
 
 def main():
     bad = 0
+    unreachable = set()
     public = {"cloudflare 1.1.1.1": resolver(["1.1.1.1"]), "google 8.8.8.8": resolver(["8.8.8.8"])}
     for (name, rtype), want in BASELINE.items():
-        views = {"auth " + ns: resolver([socket.gethostbyname(ns)]) for ns in AUTH_NS[zone_of(name)]}
+        views = {}
+        for ns in AUTH_NS[zone_of(name)]:
+            try:
+                views["auth " + ns] = resolver([socket.gethostbyname(ns)])
+            except OSError:
+                unreachable.add("auth " + ns)   # cannot even resolve the nameserver: network problem
         views.update(public)
         for label, r in views.items():
             got = ask(r, name, rtype)
+            if any(g.startswith("ERROR") for g in got):
+                unreachable.add(label)   # network problem, not a DNS change
+                continue
             ok = want <= got if (name, rtype) in ALLOW_ADDITIONS else got == want
             if not ok:
                 bad += 1
                 print(f"FAIL {name} {rtype} via {label}\n  expected {sorted(want)}\n  got      {sorted(got)}")
-    print("MAIL DNS IDENTICAL TO BASELINE" if not bad else f"{bad} DIFFERENCES: STOP, do not continue, restore from export")
-    sys.exit(1 if bad else 0)
+    auth_down = [u for u in unreachable if u.startswith("auth ")]
+    if bad:
+        print(f"{bad} DIFFERENCES: STOP, do not continue, restore from export")
+        sys.exit(1)
+    if auth_down:
+        print("INCONCLUSIVE: could not reach " + ", ".join(sorted(unreachable)) + ". Rerun from another network. This is NOT a mail change.")
+        sys.exit(2)
+    if unreachable:
+        print("MAIL DNS IDENTICAL TO BASELINE (authoritative); public resolver(s) unreachable from this network: " + ", ".join(sorted(unreachable)))
+        sys.exit(0)
+    print("MAIL DNS IDENTICAL TO BASELINE")
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()

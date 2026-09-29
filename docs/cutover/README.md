@@ -7,7 +7,7 @@ Tools for moving `www.im.agency` from Webflow to the Next.js site on Vercel with
 | `verify-source.py` | Confirms a local folder is byte-for-byte the source that staging runs (Vercel CLI upload of Sep 23, deployment `dpl_EJSRAWN6VAYySHcaPibcsYkDMmVw`). Run it before pushing that folder to Git. |
 | `staging-manifest.json` | SHA-1 of every file Vercel listed for that deployment (163 files). Used by `verify-source.py`. |
 | `patches/p0-launch.patch` | Launch SEO and analytics fixes for the staging codebase: host-aware `robots.txt`, `sitemap.xml`, per-page canonical and Open Graph tags, GA4 `G-FTJBL1NS13`, 301s for legacy Webflow paths, security headers, and `X-Robots-Tag: noindex` on every host except `www.im.agency`. |
-| `patches/hubspot-port.patch` | Ports the `cursor/hubspot-contact-form-5bd2` HubSpot embed onto the staging codebase. Apply after `p0-launch.patch`. Needs `NEXT_PUBLIC_HUBSPOT_FORM_ID`. |
+| `patches/hubspot-port.patch` | Ports the `cursor/hubspot-contact-form-5bd2` HubSpot embed onto the staging codebase. Apply after `p0-launch.patch`. Needs `NEXT_PUBLIC_HUBSPOT_FORM_ID`. The repo's `.gitignore` excludes `.env*`, so commit `.env.example` with `git add -f .env.example`. |
 | `cutover-check.sh` | Go/no-go gate. Exits non-zero if any MUST check fails. |
 | `mail_dns_guard.py` | Confirms mail DNS (MX, SPF, DKIM, DMARC, Microsoft 365 records) for `im.agency`, `intermedia.agency`, and `intermedia-advertising.com` is unchanged. Queries the authoritative nameservers directly. Run after every DNS save. |
 
@@ -32,7 +32,7 @@ git apply --check /path/to/docs/cutover/patches/hubspot-port.patch && git apply 
 
 Both patches were checked with `git apply` against the recovered staging files, and the result was type-checked, linted, and built with Next.js 16.3.5. The HubSpot unit tests pass (5 of 5). Then do these by hand in files the Vercel API could not return:
 
-1. Wrap the existing `metadata` export with `withSeo("<path>", { ... })` in these pages: converged-tv, creative, ctv, measurement, new-to-tv, partnerships, established-brands, and insights. In `insights/[slug]`, wrap the return value of `generateMetadata` instead. `grep -L "withSeo(" src/app/**/page.tsx` should then list only `results/page.tsx`.
+1. Wrap the existing `metadata` export with `withSeo("<path>", { ... })` in these pages: converged-tv, creative, ctv, measurement, new-to-tv, partnerships, established-brands, and insights. In `insights/[slug]`, wrap the return value of `generateMetadata` instead. `grep -rL "withSeo(" src/app --include=page.tsx` should then list only `src/app/results/page.tsx`.
 2. Add `method="post"` to the staging `<form>` in `src/components/contact-form.tsx`, so a submit before JavaScript loads cannot put names and emails in the URL.
 
 ## 3. Run the gate
@@ -47,6 +47,11 @@ CHECK_ALIASES=1 docs/cutover/cutover-check.sh prod     # after the alias domains
 
 Each run writes a timestamped log to `./cutover-reports/`. Any `FAIL` means no-go.
 
+Options:
+- `HUBSPOT_FORM_ID=<guid>` makes the gate fail if `/contact` renders the email-draft fallback instead of the HubSpot form.
+- `VERCEL_BYPASS=<secret>` (Deployment Protection > Protection Bypass for Automation) lets the gate test a protected preview or staged deployment. Use it with `TARGET=<deployment URL>`.
+- Run pinned or post-flip checks with `env -u HTTPS_PROXY -u https_proxy`, so a corporate proxy cannot bypass the pinning or answer from a stale route.
+
 On production, the check fails if `www.im.agency` sends an `X-Robots-Tag` header. A typo in the production host name would otherwise remove the site from Google.
 
 The gate cannot see double-counted analytics. After launch, open the site with DevTools and confirm there is exactly one request to `googletagmanager.com/gtag/js?id=G-FTJBL1NS13`. Also confirm GA4 Realtime shows the visit. On any host other than `www.im.agency`, GA4 stays silent unless the URL has `?ga_test=1`, which sends debug hits for GA4 DebugView.
@@ -54,8 +59,12 @@ The gate cannot see double-counted analytics. After launch, open the site with D
 ## 4. Guard email on every DNS change
 
 ```bash
-pip install dnspython
-python3 docs/cutover/mail_dns_guard.py
+python3 -m venv ~/.venvs/cutover && ~/.venvs/cutover/bin/pip install -q dnspython   # once
+~/.venvs/cutover/bin/python docs/cutover/mail_dns_guard.py
 ```
 
-`MAIL DNS IDENTICAL TO BASELINE` (exit 0) is the only acceptable answer. Anything else: stop, and restore the last edited record from the zone export.
+| Exit | Meaning | Action |
+|---|---|---|
+| 0 | `MAIL DNS IDENTICAL TO BASELINE` | Continue |
+| 1 | A real difference in authoritative answers | Stop. Restore the last edited record from the zone export. |
+| 2 | `INCONCLUSIVE`: a nameserver could not be reached from this network | Not a mail change. Rerun from another network, for example a phone hotspot. |

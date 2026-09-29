@@ -51,7 +51,7 @@ diff -ruN a2/src/app/contact/page.tsx b2/src/app/contact/page.tsx
 diff -ruN a2/src/components/hubspot-contact-form.tsx b2/src/components/hubspot-contact-form.tsx
 --- a/src/components/hubspot-contact-form.tsx
 +++ b/src/components/hubspot-contact-form.tsx
-@@ -0,0 +1,133 @@
+@@ -0,0 +1,134 @@
 +"use client";
 +
 +import { site } from "@/lib/data";
@@ -63,6 +63,7 @@ diff -ruN a2/src/components/hubspot-contact-form.tsx b2/src/components/hubspot-c
 +} from "@/lib/hubspot";
 +import Script from "next/script";
 +import { useEffect, useRef, useState } from "react";
++import "./hubspot-form.css";
 +
 +const LOAD_TIMEOUT_MS = 15000;
 +
@@ -184,6 +185,22 @@ diff -ruN a2/src/components/hubspot-contact-form.tsx b2/src/components/hubspot-c
 +      </p>
 +    </div>
 +  );
++}
+diff -ruN a2/src/components/hubspot-form.css b2/src/components/hubspot-form.css
+--- a/src/components/hubspot-form.css
++++ b/src/components/hubspot-form.css
+@@ -0,0 +1,12 @@
++/* HubSpot injects the inquiry iframe into this node. Field chrome is styled in HubSpot. */
++.hs-form-frame {
++  width: 100%;
++  min-height: 12rem;
++}
++
++.hs-form-frame iframe {
++  width: 100% !important;
++  max-width: 100%;
++  border: 0;
++  color-scheme: light;
 +}
 diff -ruN a2/src/lib/hubspot.test.ts b2/src/lib/hubspot.test.ts
 --- a/src/lib/hubspot.test.ts

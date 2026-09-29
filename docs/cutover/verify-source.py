@@ -19,6 +19,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKIP_DIRS = {".git", "node_modules", ".next", ".vercel", "out", "docs"}
+# Generated files that legitimately flip between two contents: `next build` writes
+# ./.next/types, `next dev` writes ./.next/dev/types into next-env.d.ts.
+ALT_OK = {"next-env.d.ts": {"b23d2b0e9411866941f1dd73e7477766d205cb8e"}}
 
 
 def sha1(path):
@@ -42,7 +45,7 @@ def main():
         path = os.path.join(root, rel)
         if not os.path.isfile(path):
             missing.append(rel)
-        elif sha1(path) != want:
+        elif sha1(path) != want and sha1(path) not in ALT_OK.get(rel, ()):
             mismatched.append(rel)
         else:
             ok += 1
