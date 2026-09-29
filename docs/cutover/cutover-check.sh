@@ -15,6 +15,8 @@
 #   GA_ID=G-FTJBL1NS13     GA4 measurement ID that must appear in page HTML
 #   SKIP_GA=1              downgrade the GA check to a warning (preview hosts)
 #   CHECK_ALIASES=1        also test intermedia.agency / intermedia-advertising.com 301s
+#   RESOLVE_IP=<vercel ip> prod mode before DNS moves: pin www.im.agency and im.agency
+#                          to this IP (needs the pre-issued Vercel certificate)
 #   EXTRA_PAGES="/insights /results"   more pages that must return 200
 #   REPORT_DIR=./cutover-reports       where the timestamped log is written
 
@@ -45,6 +47,13 @@ LEGACY_REDIRECTS="/about-us|/about
 /digital-marketing|/converged-tv
 /digital-marketing/|/converged-tv"
 
+RES=""
+if [ -n "${RESOLVE_IP:-}" ]; then
+  for hp in www.im.agency:443 im.agency:443 www.im.agency:80 im.agency:80; do
+    RES="$RES --resolve $hp:$RESOLVE_IP"
+  done
+fi
+
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36 InterMediaCutoverCheck/1.0"
 TMP="$(mktemp -d 2>/dev/null || mktemp -d -t cutover)"
 trap 'rm -rf "$TMP"' EXIT
@@ -64,13 +73,15 @@ fail() { FAILS=$((FAILS + 1));   log "FAIL  $*"; }
 
 # fetch URL -> writes $TMP/h (headers) and $TMP/b (body); echoes "code|location|content_type"
 fetch() {
-  curl -sS -A "$UA" --max-time 25 -o "$TMP/b" -D "$TMP/h" \
+  # shellcheck disable=SC2086
+  curl -sS $RES -A "$UA" --max-time 25 -o "$TMP/b" -D "$TMP/h" \
     -w '%{http_code}|%{redirect_url}|%{content_type}' "$1" 2>"$TMP/err" || echo "000||"
 }
 
 # follow URL -> echoes "code|num_redirects|effective_url"
 follow() {
-  curl -sS -A "$UA" --max-time 30 -L --max-redirs 10 -o "$TMP/fb" \
+  # shellcheck disable=SC2086
+  curl -sS $RES -A "$UA" --max-time 30 -L --max-redirs 10 -o "$TMP/fb" \
     -w '%{http_code}|%{num_redirects}|%{url_effective}' "$1" 2>"$TMP/err" || echo "000|0|"
 }
 
@@ -86,6 +97,7 @@ canonical_in() {
 
 log "InterMedia cutover check"
 log "mode=$MODE target=$TARGET canonical=$CANONICAL_HOST time=$STAMP"
+[ -n "$RES" ] && log "pinned: www.im.agency and im.agency -> $RESOLVE_IP (pre-DNS pre-flight)"
 log "------------------------------------------------------------------"
 
 # 1. Core pages: 200, no noindex, self canonical on the production host, GA present.
@@ -113,12 +125,11 @@ for p in $ALL_PAGES; do
   elif [ "${got%/}" = "${want%/}" ]; then pass "$p canonical $got"
   else fail "$p canonical is $got (expected $want)"; fi
 
+  # Presence only. Next.js repeats inline script text in its RSC payload, so a raw
+  # count cannot detect double tagging; confirm one gtag/js request in the browser.
   if grep -q "$GA_ID" "$TMP/b"; then pass "$p contains $GA_ID"
   elif [ "${SKIP_GA:-0}" = "1" ]; then warn "$p missing $GA_ID (SKIP_GA=1)"
   else fail "$p missing GA4 id $GA_ID"; fi
-
-  n_ga="$(grep -o "gtag/js?id=$GA_ID" "$TMP/b" | wc -l | tr -d ' ')"
-  [ "$n_ga" -gt 1 ] && fail "$p loads gtag.js for $GA_ID $n_ga times (double counting)"
 done
 
 # 2. Legacy redirects: permanent, single hop where possible, land on the right page.
@@ -227,7 +238,8 @@ if [ "$MODE" = "prod" ]; then
 
   if command -v openssl >/dev/null 2>&1; then
     for host in www.im.agency im.agency; do
-      exp="$(echo | openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null | openssl x509 -noout -enddate -issuer 2>/dev/null | tr '\n' ' ')"
+      addr="${RESOLVE_IP:-$host}"
+      exp="$(echo | openssl s_client -servername "$host" -connect "$addr:443" 2>/dev/null | openssl x509 -noout -enddate -issuer 2>/dev/null | tr '\n' ' ')"
       [ -n "$exp" ] && pass "TLS $host: $exp" || fail "TLS handshake failed for $host"
     done
   fi
