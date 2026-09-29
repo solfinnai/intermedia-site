@@ -168,14 +168,17 @@ diff -ruN a/src/app/layout.tsx b/src/app/layout.tsx
 diff -ruN a/src/app/page.tsx b/src/app/page.tsx
 --- a/src/app/page.tsx
 +++ b/src/app/page.tsx
-@@ -1,11 +1,11 @@
+@@ -1,11 +1,13 @@
  import { HomePage } from "@/components/home-page";
 -import type { Metadata } from "next";
 +import { withSeo } from "@/lib/seo";
  
 -export const metadata: Metadata = {
+-  title: "The Performance TV Agency",
++// The layout's title template does not apply to the root page, so the brand
++// goes in an absolute title. Copy pending Andrew's approval.
 +export const metadata = withSeo("/", {
-   title: "The Performance TV Agency",
++  title: { absolute: "InterMedia Advertising | The Performance TV Agency" },
    description:
      "Strategic media buying and measurement across linear TV and streaming. We connect the media plan to your business goals.",
 -};
