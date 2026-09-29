@@ -6,10 +6,8 @@ Tools for moving `www.im.agency` from Webflow to the Next.js site on Vercel with
 |---|---|
 | `verify-source.py` | Confirms a local folder is byte-for-byte the source that staging runs (Vercel CLI upload of Sep 23, deployment `dpl_EJSRAWN6VAYySHcaPibcsYkDMmVw`). Run it before pushing that folder to Git. |
 | `staging-manifest.json` | SHA-1 of every file Vercel listed for that deployment (163 files). Used by `verify-source.py`. |
-| `patches/p0-launch.patch` | Launch SEO and analytics fixes for the staging codebase: host-aware `robots.txt`, `sitemap.xml`, per-page canonical and Open Graph tags, GA4 `G-FTJBL1NS13`, 301s for legacy Webflow paths, security headers, and `X-Robots-Tag: noindex` on every host except `www.im.agency`. |
-| `patches/hubspot-port.patch` | Ports the `cursor/hubspot-contact-form-5bd2` HubSpot embed onto the staging codebase. Apply after `p0-launch.patch`. Needs `NEXT_PUBLIC_HUBSPOT_FORM_ID`. The repo's `.gitignore` excludes `.env*`, so commit `.env.example` with `git add -f .env.example`. |
 | `cutover-check.sh` | Go/no-go gate. Exits non-zero if any MUST check fails. |
-| `mail_dns_guard.py` | Confirms mail DNS (MX, SPF, DKIM, DMARC, Microsoft 365 records) for `im.agency`, `intermedia.agency`, and `intermedia-advertising.com` is unchanged. Queries the authoritative nameservers directly. Run after every DNS save. |
+| `mail_dns_guard.py` | Confirms mail DNS (MX, SPF, DKIM including Salesforce `sf2`, DMARC, Postmark `pm-bounces`, Microsoft 365 records) for `im.agency`, `intermedia.agency`, and `intermedia-advertising.com` is unchanged, plus `ftp`, `sftp`, and `analytics.im.agency`. Queries the authoritative nameservers directly. Run after every DNS save. |
 
 ## 1. Confirm the source, then push it
 
@@ -19,21 +17,19 @@ python3 docs/cutover/verify-source.py ~/path/to/local/intermedia-site
 
 `RESULT: MATCHES staging` means that folder is what staging serves. Ten files sit too deep for the Vercel API to list (the route pages for converged-tv, creative, ctv, established-brands, insights, insights/[slug], measurement, new-to-tv, partnerships, plus `components/ui/dialog.tsx`). The script reports them as present or absent; confirm them by building and comparing those pages with staging.
 
-Push the folder to a new branch of a private repository. Do not push it to `main` here. A push to `main` deploys the older `intermedia-site` Vercel project and runs `vendor-assets.yml`.
+This is done: commit `f419527` of `solfinnai/intermedia-site-upgrade` matches 162 of 163 files (the other is the gitignored `next-env.d.ts`). Do not push the upgrade source to `main` of this repository: that deploys the older `intermedia-site` Vercel project and runs `vendor-assets.yml`.
 
-## 2. Apply the patches
+## 2. Launch changes
 
-From the root of the pushed staging source:
+The site source now lives in the private repository `solfinnai/intermedia-site-upgrade`, and the launch changes are a draft pull request there (branch `claude/intermedia-migration-audit-e6vl2o`). That project is git-connected, so merging to `main` deploys to production at once. Merge only in the launch window.
 
-```bash
-git apply --check /path/to/docs/cutover/patches/p0-launch.patch && git apply /path/to/docs/cutover/patches/p0-launch.patch
-git apply --check /path/to/docs/cutover/patches/hubspot-port.patch && git apply /path/to/docs/cutover/patches/hubspot-port.patch   # optional, needs the form GUID
-```
-
-Both patches were checked with `git apply` against the recovered staging files, and the result was type-checked, linted, and built with Next.js 16.3.5. The HubSpot unit tests pass (5 of 5). Then do these by hand in files the Vercel API could not return:
-
-1. Wrap the existing `metadata` export with `withSeo("<path>", { ... })` in these pages: converged-tv, creative, ctv, measurement, new-to-tv, partnerships, established-brands, and insights. In `insights/[slug]`, wrap the return value of `generateMetadata` instead. `grep -rL "withSeo(" src/app --include=page.tsx` should then list only `src/app/results/page.tsx`.
-2. Add `method="post"` to the staging `<form>` in `src/components/contact-form.tsx`, so a submit before JavaScript loads cannot put names and emails in the URL.
+What the launch build does:
+- Self canonical and Open Graph tags on `https://www.im.agency` for every page. The 404 page has no canonical.
+- The same `robots.txt` on every host (`Allow: /` plus the sitemap line). Hosts other than `www.im.agency` are kept out of search by `X-Robots-Tag: noindex, nofollow`, which crawlers can only see because robots.txt lets them in.
+- GA4 `G-FTJBL1NS13` as the standard gtag.js snippet in `<head>`, so Search Console's Google Analytics verification keeps working. Only `www.im.agency` sends hits.
+- 301s: `/about-us` to `/about`, `/old-home` to `/`, `/digital-marketing` to `/converged-tv`. `/style-guide` returns 404.
+- The HubSpot form when `NEXT_PUBLIC_HUBSPOT_FORM_ID` is set at build time.
+- Next.js 16.3.7.
 
 ## 3. Run the gate
 
@@ -54,7 +50,7 @@ Options:
 
 On production, the check fails if `www.im.agency` sends an `X-Robots-Tag` header. A typo in the production host name would otherwise remove the site from Google.
 
-The gate cannot see double-counted analytics. After launch, open the site with DevTools and confirm there is exactly one request to `googletagmanager.com/gtag/js?id=G-FTJBL1NS13`. Also confirm GA4 Realtime shows the visit. On any host other than `www.im.agency`, GA4 stays silent unless the URL has `?ga_test=1`, which sends debug hits for GA4 DebugView.
+The gate cannot see double-counted analytics. After launch, open the site with DevTools and confirm there is exactly one request to `googletagmanager.com/gtag/js?id=G-FTJBL1NS13`. Also confirm GA4 Realtime shows the visit. On any host other than `www.im.agency`, the library loads but sends nothing unless the URL has `?ga_test=1`, which sends debug hits for GA4 DebugView.
 
 ## 4. Guard email on every DNS change
 

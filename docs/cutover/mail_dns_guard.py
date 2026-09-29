@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Mail DNS guard for the im.agency cutover. Read-only.
-Compares mail-related records against the baseline captured Tue Sep 29 2026 ~02:50 UTC.
+Compares mail-related records (plus a few non-web records the cutover must not touch)
+against the baseline captured Tue Sep 29 2026 ~02:50 UTC, extended ~20:15 UTC.
 Queries each zone's authoritative nameservers AND two public resolvers.
 Exit 0 = identical, exit 1 = any difference (STOP and roll back the last edit).
 Requires: pip install dnspython
@@ -20,6 +21,8 @@ BASELINE = {
   ("selector1._domainkey.im.agency", "CNAME"): {"selector1-im-agency._domainkey.imgcteam.onmicrosoft.com."},
   ("selector2._domainkey.im.agency", "CNAME"): {"selector2-im-agency._domainkey.imgcteam.onmicrosoft.com."},
   ("sf1._domainkey.im.agency", "CNAME"): {"sf1.usm6gl.custdkim.salesforce.com."},
+  ("sf2._domainkey.im.agency", "CNAME"): {"sf2.vnfws6.custdkim.salesforce.com."},
+  ("pm-bounces.im.agency", "CNAME"): {"pm.mtasv.net."},  # Postmark return path
   ("autodiscover.im.agency", "CNAME"): {"autodiscover.outlook.com."},
   ("enterpriseregistration.im.agency", "CNAME"): {"enterpriseregistration.windows.net."},
   ("enterpriseenrollment.im.agency", "CNAME"): {"enterpriseenrollment.manage.microsoft.com."},
@@ -29,6 +32,11 @@ BASELINE = {
   ("_sip._tls.im.agency", "SRV"): {"100 1 443 sipdir.online.lync.com."},
   ("mail.im.agency", "A"): {"12.231.175.133"},
   ("email.im.agency", "CNAME"): {"email.secureserver.net."},
+  # Not mail, but also outside the cutover: file transfer, a separate Vercel app, and the domain-connect helper.
+  ("ftp.im.agency", "A"): {"173.255.108.40"},
+  ("sftp.im.agency", "A"): {"173.255.108.41"},
+  ("analytics.im.agency", "CNAME"): {"d7c4e89492e4b0fd.vercel-dns-017.com."},
+  ("_domainconnect.im.agency", "CNAME"): {"_domainconnect.gd.domaincontrol.com."},
   # intermedia.agency (GoDaddy: ns21/ns22.domaincontrol.com)
   ("intermedia.agency", "MX"): {"0 intermedia-agency.mail.protection.outlook.com."},
   ("intermedia.agency", "TXT"): {'"v=spf1 include:secureserver.net -all"', '"NETORGFT10574608.onmicrosoft.com"'},

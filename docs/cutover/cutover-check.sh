@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # InterMedia cutover acceptance gate.
 #
-# Runs every MUST/SHOULD check from docs/cutover/MIGRATION-PLAN.md against one host
+# Runs every MUST/SHOULD check from the private cutover runbook against one host
 # and exits non-zero if any MUST check fails. Works with the bash 3.2 that ships on
 # macOS (no associative arrays, no grep -P).
 #
@@ -40,10 +40,10 @@ CORE_PAGES="/ /about /converged-tv /measurement /contact"
 ALL_PAGES="$CORE_PAGES ${EXTRA_PAGES:-}"
 
 # Legacy paths that must permanently redirect. Format: source|expected final path
+# (/style-guide is not here: it must be a plain 404, see check 5.)
 LEGACY_REDIRECTS="/about-us|/about
 /about-us/|/about
 /old-home|/
-/style-guide|/
 /digital-marketing|/converged-tv
 /digital-marketing/|/converged-tv"
 
@@ -132,6 +132,14 @@ for p in $ALL_PAGES; do
   if grep -q "$GA_ID" "$TMP/b"; then pass "$p contains $GA_ID"
   elif [ "${SKIP_GA:-0}" = "1" ]; then warn "$p missing $GA_ID (SKIP_GA=1)"
   else fail "$p missing GA4 id $GA_ID"; fi
+
+  # Search Console's "Google Analytics" ownership check needs the gtag.js tag inside <head>.
+  if [ "$p" = "/" ]; then
+    gpos="$(grep -bo "googletagmanager.com/gtag/js?id=$GA_ID" "$TMP/b" | head -n 1 | cut -d: -f1)"
+    hpos="$(grep -bo '</head>' "$TMP/b" | head -n 1 | cut -d: -f1)"
+    if [ -n "$gpos" ] && [ -n "$hpos" ] && [ "$gpos" -lt "$hpos" ]; then pass "gtag.js is inside <head> (keeps Search Console GA verification)"
+    else warn "gtag.js not found inside <head>; Search Console GA-method verification could lapse"; fi
+  fi
 done
 
 # 1b. Lead capture: when a HubSpot GUID is expected, /contact must render the HubSpot frame, not the email-draft fallback.
@@ -174,14 +182,15 @@ elif grep -qi '<html' "$TMP/b"; then fail "robots.txt body is HTML"
 else
   pass "robots.txt 200 text/plain"
   grep -qi '^user-agent:' "$TMP/b" && pass "robots.txt has User-agent" || fail "robots.txt has no User-agent line"
-  if [ "$MODE" = "prod" ]; then
-    grep -qiE '^disallow:[[:space:]]*/[[:space:]]*$' "$TMP/b" && fail "production robots.txt blocks the whole site"
-    grep -qi "^sitemap:[[:space:]]*$CANONICAL_HOST/sitemap.xml" "$TMP/b" \
-      && pass "robots.txt points to $CANONICAL_HOST/sitemap.xml" || fail "robots.txt missing Sitemap: $CANONICAL_HOST/sitemap.xml"
+  grep -qi "^sitemap:[[:space:]]*$CANONICAL_HOST/sitemap.xml" "$TMP/b" \
+    && pass "robots.txt points to $CANONICAL_HOST/sitemap.xml" || fail "robots.txt missing Sitemap: $CANONICAL_HOST/sitemap.xml"
+  # robots.txt is the same on every host. Non-production hosts stay out of the index through
+  # X-Robots-Tag (check 1), which crawlers only see if robots.txt lets them fetch pages.
+  if grep -qiE '^disallow:[[:space:]]*/[[:space:]]*$' "$TMP/b"; then
+    if [ "$MODE" = "prod" ]; then fail "production robots.txt blocks the whole site"
+    else warn "robots.txt disallows crawling here, so crawlers cannot see the noindex header"; fi
   else
-    grep -qiE '^disallow:[[:space:]]*/[[:space:]]*$' "$TMP/b" \
-      && pass "non-production robots.txt disallows crawling (expected)" \
-      || warn "non-production robots.txt allows crawling"
+    pass "robots.txt allows crawling"
   fi
 fi
 
@@ -215,6 +224,13 @@ fi
 log "[5] Not-found handling"
 r="$(fetch "$TARGET/this-path-should-not-exist-$STAMP")"; code="${r%%|*}"
 [ "$code" = "404" ] && pass "unknown path returns 404" || fail "unknown path returns $code (expected 404)"
+# Webflow template page with no value: must be gone, not redirected to the home page (soft 404).
+r="$(fetch "$TARGET/style-guide")"; code="${r%%|*}"
+case "$code" in
+  404|410) pass "/style-guide returns $code" ;;
+  301|308) warn "/style-guide redirects ($code); a plain 404 is preferred" ;;
+  *) fail "/style-guide returns $code (expected 404)" ;;
+esac
 
 # 6. Security headers (warnings, not blockers, except HSTS on production).
 log "[6] Security headers"
